@@ -1,0 +1,13 @@
+cat <<EOF > .gitignore
+# Ignore Terraform temp files and state
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Ignore Private Keys (VERY IMPORTANT)
+*.pem
+
+# Ignore System files
+.DS_Store
+EOF
