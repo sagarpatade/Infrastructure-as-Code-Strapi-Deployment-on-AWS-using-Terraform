@@ -3,7 +3,7 @@ resource "aws_instance" "strapi_server" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name
-  subnet_id = var.public_subnet_id
+  subnet_id              = var.private_subnet_id
   
   # CHANGE 1: Use 'vpc_security_group_ids' for VPCs (security_groups is legacy)
   vpc_security_group_ids = [var.app_sg_id]
