@@ -4,7 +4,7 @@ This project automates the deployment of a **Strapi v4 Headless CMS** on AWS usi
 
 It provisions a secure, production-ready infrastructure with a custom VPC, Public/Private subnet separation, and an Application Load Balancer.
 
-
+https://www.loom.com/share/68e07e779f45431a90e11691ac900e04
 
 ## 🏗 Architecture Overview
 
