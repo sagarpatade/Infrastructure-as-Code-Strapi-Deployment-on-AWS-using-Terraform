@@ -31,10 +31,10 @@ resource "aws_lb_target_group" "strapi_tg" {
     path                = "/" # Checks the homepage
     protocol            = "HTTP"
     matcher             = "200-404" # 200 (OK) or 404 (Not Found) means server is running
-    interval            = 30
-    timeout             = 5
+    interval            = 60
+    timeout             = 30
     healthy_threshold   = 2
-    unhealthy_threshold = 2
+    unhealthy_threshold = 5
   }
 }
 

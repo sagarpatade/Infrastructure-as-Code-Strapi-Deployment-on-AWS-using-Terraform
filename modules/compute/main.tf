@@ -5,77 +5,86 @@ resource "aws_instance" "strapi_server" {
   key_name               = var.key_name
   subnet_id              = var.private_subnet_id
   
-  # CHANGE 1: Use 'vpc_security_group_ids' for VPCs (security_groups is legacy)
-  vpc_security_group_ids = [var.app_sg_id]
+  # CHANGE 1: Security Group attached
+vpc_security_group_ids = [var.app_sg_id]
 
-  root_block_device {
-    volume_size = 20    # 20 GB Storage (Was 8 GB)
-    volume_type = "gp3" # General Purpose SSD
+# CHANGE 2: Attach the SSM Role (Enables Secure Console Connection without Public IP)
+iam_instance_profile = var.iam_instance_profile
+
+root_block_device {
+    volume_size = 20    # 20 GB Storage to prevent disk full errors
+    volume_type = "gp3"
   }
 
-  # CHANGE 2: Wrap the script in a HEREDOC string (<<-EOF ... EOF)
+  # 3. USER DATA (The "Compatibility Configuration": Node 20 + Strapi v4)
+  # 2. USER DATA (Final Fix: Removed broken '--host' flag)
   user_data = <<-EOF
-    #!/bin/bash
-    set -ex  # This ensures logs are visible in /var/log/cloud-init-output.log
-
-    # 1. Update system and install required tools
-    apt-get update -y
-    apt-get install -y docker.io git
-
-    # 2. Start and enable Docker service
-    systemctl start docker
-    systemctl enable docker
-    usermod -aG docker ubuntu
-
-    # 3. Create a clean working directory
-    mkdir -p /home/ubuntu/strapi-app
-    cd /home/ubuntu/strapi-app
-
-    # 4. Create the Dockerfile
-    cat <<DOCKERFILE > Dockerfile
-    FROM node:18
-
-    # Set the working directory inside the container
-    WORKDIR /srv/app
-
-    # Install git
-    RUN apt-get update && apt-get install -y git
-
-    # CLONE STRATEGY: 
-    # Clone directly into the current directory (.) to find package.json immediately
-    RUN git clone https://github.com/sagarpatade/strapi-intern-task1.git .
-
-    # Install dependencies
-    RUN npm install
-
-    # Build the Strapi admin panel
-    RUN npm run build
-
-    # Expose the default Strapi port
-    EXPOSE 1337
-
-    # Start Strapi in development mode
-    CMD ["npm", "run", "develop"]
-    DOCKERFILE
-
-    # 5. Build the Docker Image
-    # This might take 5-10 minutes depending on instance size
-    docker build -t my-strapi-app .
-
-    # 6. Run the Container
-    docker run -d \
-      --name strapi-container \
-      --restart always \
-      -p 1337:1337 \
-      my-strapi-app
-  EOF
+              #!/bin/bash
+              
+              # A. Install Docker
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              
+              # B. Create Dockerfile
+              # We use Node 20 Bullseye (Required for dependencies)
+              cat <<EOT >> /home/ubuntu/Dockerfile
+              FROM node:20-bullseye
+              
+              # 1. Install System Dependencies
+              RUN apt-get update && apt-get install -y \
+                  libvips-dev \
+                  python3 \
+                  make \
+                  g++ \
+                  git
+              
+              WORKDIR /srv/app
+              
+              # 2. Create Strapi v4 App
+              # We use v4.25.4 (Stable)
+              RUN npx create-strapi-app@4.25.4 my-project \
+                  --quickstart \
+                  --no-run \
+                  --skip-cloud
+              
+              WORKDIR /srv/app/my-project
+              
+              # 3. Force Rebuild
+              RUN npm rebuild sharp
+              
+              # 4. Build Admin Panel
+              RUN npm run build
+              
+              # 5. Set Environment Variables (The Correct Way)
+              # Strapi will read these automatically. No flags needed!
+              ENV HOST=0.0.0.0
+              ENV PORT=1337
+              ENV APP_KEYS="toBeModified1,toBeModified2"
+              ENV API_TOKEN_SALT="tobemodified"
+              ENV ADMIN_JWT_SECRET="tobemodified"
+              ENV TRANSFER_TOKEN_SALT="tobemodified"
+              ENV JWT_SECRET="tobemodified"
+              ENV NODE_ENV=development
+              
+              # 6. Start Server (FIX: Removed the crashing '--host' flag)
+              EXPOSE 1337
+              CMD ["npm", "run", "develop"]
+              EOT
+              
+              # C. Build & Run
+              cd /home/ubuntu
+              sudo docker build -t strapi-stable .
+              sudo docker run -d -p 1337:1337 --restart always --name strapi strapi-stable
+              EOF
 
   tags = {
     Name = "${var.environment}-strapi-server"
   }
 }
 
-# 3. CONNECT TO LOAD BALANCER
+# 2. CONNECT TO LOAD BALANCER
 resource "aws_lb_target_group_attachment" "strapi_attach" {
   target_group_arn = var.target_group_arn
   target_id        = aws_instance.strapi_server.id
@@ -83,16 +92,16 @@ resource "aws_lb_target_group_attachment" "strapi_attach" {
 }
 
 # ---------------------------------------------------------
-# BASTION HOST RESOURCES (Add to bottom of main.tf)
+# BASTION HOST RESOURCES
 # ---------------------------------------------------------
 
-# 1. Bastion Security Group (The "Lobby Guard")
+# 1. Bastion Security Group
 resource "aws_security_group" "bastion_sg" {
   name        = "bastion-security-group"
   description = "Allow SSH access"
-  vpc_id = var.vpc_id  # <--- MAKE SURE THIS MATCHES YOUR VPC NAME
+  vpc_id      = var.vpc_id
 
-  # Inbound: Allow SSH from ANYWHERE
+  # Inbound: Allow SSH from ANYWHERE (For troubleshooting only)
   ingress {
     from_port   = 22
     to_port     = 22
@@ -119,8 +128,8 @@ resource "aws_instance" "bastion" {
   instance_type               = "t2.micro"
   key_name                    = var.key_name
   
-  # IMPORTANT: This must be the PUBLIC subnet ID
-  subnet_id     = var.public_subnet_id 
+  # IMPORTANT: This must be the PUBLIC subnet ID so you can reach it
+  subnet_id                   = var.public_subnet_id 
   
   vpc_security_group_ids      = [aws_security_group.bastion_sg.id]
   associate_public_ip_address = true

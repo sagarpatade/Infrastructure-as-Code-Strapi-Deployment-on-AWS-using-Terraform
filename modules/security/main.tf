@@ -76,3 +76,44 @@ resource "local_file" "private_key" {
   filename        = "${path.module}/../../${var.environment}-key.pem"
   file_permission = "0400"
 }
+
+# 1. Create the IAM Role
+resource "aws_iam_role" "ssm_role" {
+  name = "${var.environment}-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.environment}-ssm-role"
+  }
+}
+
+# 2. Attach the "AmazonSSMManagedInstanceCore" Policy
+# This is an AWS-managed policy that has all the permissions needed for SSM.
+resource "aws_iam_role_policy_attachment" "ssm_policy" {
+  role       = aws_iam_role.ssm_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# 3. Create the Instance Profile
+# This is the "container" for the role that we actually attach to the EC2 instance.
+resource "aws_iam_instance_profile" "ssm_profile" {
+  name = "${var.environment}-ssm-profile"
+  role = aws_iam_role.ssm_role.name
+}
+
+# 4. Output the Profile Name (So the Compute module can use it)
+output "ssm_profile_name" {
+  value = aws_iam_instance_profile.ssm_profile.name
+}

@@ -23,8 +23,10 @@ module "security" {
 }
 
 # 3. LOAD BALANCER MODULE (The Traffic Manager)
+# CHECK: Ensure your folder is named "modules/loadbalancer" or "modules/loadbalancing"
+# If your folder is named "loadbalancing", change the source line below to "./modules/loadbalancing"
 module "loadbalancer" {
-  source = "./modules/loadbalancer"
+  source = "./modules/loadbalancer" 
 
   environment = var.environment
   vpc_id      = module.networking.vpc_id
@@ -54,10 +56,12 @@ module "compute" {
   private_subnet_id = module.networking.private_subnet_id
   
   # DEPENDENCY: Needs the Target Group from Phase 3
-  target_group_arn = module.loadbalancer.target_group_arn
+  target_group_arn = module.loadbalancer.target_group_arn # Note: Ensure module name matches step 3 name
 
   vpc_id           = module.networking.vpc_id
   public_subnet_id = module.networking.public_subnet_id
+
+  # --- [FIX IS HERE] ---
+  # We must pass the SSM Profile from Security to Compute
+  iam_instance_profile = module.security.ssm_profile_name
 }
-
-
